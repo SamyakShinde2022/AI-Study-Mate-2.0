@@ -1,0 +1,6 @@
+{
+  "name": "CogniStudy AI - Gemini Learning Suite",
+  "description": "All-in-one AI study companion powered by Gemini: AI Tutor, smart notes summarizer, quiz & flashcard generator, important exam questions, viva examination simulator, personalized study planner, and performance insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
