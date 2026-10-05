@@ -41,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'important_questions', label: 'High-Yield Qs', icon: <FileQuestion className="w-4 h-4" /> },
     { id: 'viva', label: 'Viva Voce', icon: <Mic className="w-4 h-4" />, badge: 'Oral' },
     { id: 'planner', label: 'Study Planner', icon: <Calendar className="w-4 h-4" /> },
-    { id: 'insights', label: 'AI Insights', icon: <BarChart3 className="w-4 h-4" />, badge: 'Analytics' },
+    { id: 'progress', label: 'Progress', icon: <BarChart3 className="w-4 h-4" />, badge: 'Analytics' },
   ];
 
   return (

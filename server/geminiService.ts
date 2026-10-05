@@ -6,9 +6,9 @@ import { GoogleGenAI, Type } from '@google/genai';
  * Uses GEMINI_API_KEY environment variable.
  */
 
-// Model selection: gemini-3.8-flash as primary, with standard flash aliases as fallback during temporary 503 spikes
-const MODEL_NAME = 'gemini-3.8-flash';
-const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+// Model selection: gemini-3.1-flash-lite as primary fast model, with gemini-3.8-flash as fallback
+const MODEL_NAME = 'gemini-3.1-flash-lite';
+const FALLBACK_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
 
 // Lazily obtain or initialize the GoogleGenAI instance
 function getGenAIClient(): GoogleGenAI {
@@ -133,31 +133,66 @@ export const GeminiService = {
   },
 
   /**
-   * 1. AI Tutor - Conversational explanations with customizable pedagogy
+   * 1. AI Tutor - Versatile General Academic & Study Material Assistant
    */
   async askTutor(params: {
     message: string;
-    topic?: string;
-    subject?: string;
+    mode?: 'general' | 'material';
+    materialContent?: string;
+    materialTitle?: string;
     style?: 'intuitive' | 'first-principles' | 'exam-focused' | 'socratic';
     history?: Array<{ role: 'user' | 'model'; text: string }>;
   }): Promise<{ reply: string; followUpQuestions: string[]; keyTakeaway?: string }> {
-    const ai = getGenAIClient();
-    const { message, topic = 'General Study', subject = 'Academics', style = 'intuitive', history = [] } = params;
+    const {
+      message,
+      mode = 'general',
+      materialContent,
+      materialTitle,
+      style = 'intuitive',
+      history = [],
+    } = params;
 
     const styleInstructions: Record<string, string> = {
-      intuitive: 'Explain concepts using real-world everyday analogies, visual metaphors, and accessible intuition before formal definitions.',
-      'first-principles': 'Break the topic down to its most fundamental axiomatic truths and build upward logically step-by-step.',
-      'exam-focused': 'Highlight exact definitions, high-yield exam points, formula derivations, and common examiner marking keywords.',
-      socratic: 'Guide the student through thought-provoking questions and hints to lead them toward understanding the concept themselves.',
+      intuitive:
+        'Explain concepts using real-world analogies, relatable intuition, and concrete examples before formal definitions.',
+      'first-principles':
+        'Deconstruct the problem to fundamental truths, underlying mechanics, and logical derivations step-by-step.',
+      'exam-focused':
+        'Highlight standard textbook definitions, high-yield exam points, formula derivations, and common examiner rubric keywords.',
+      socratic:
+        'Guide the student with thoughtful questions, nudges, and hints to stimulate independent discovery.',
     };
 
-    const systemInstruction = `You are an elite, patient, and engaging AI Academic Tutor specializing in ${subject} (${topic}).
-Pedagogical Directive: ${styleInstructions[style] || styleInstructions.intuitive}
-Tone: Encouraging, intellectually rigorous, crystal clear, formatted with clear Markdown headers, bold highlights, and LaTeX math ($...$ or $$...$$) where applicable.
+    const isStudyMaterialMode = mode === 'material' && Boolean(materialContent && materialContent.trim().length > 0);
 
-In addition to your main explanation, output a JSON object at the end inside an explicit block or conform strictly to JSON format.
-Format your output strictly as a JSON object with this shape:
+    const systemInstruction = `You are StudyMate, a world-class, versatile, and patient AI Academic Tutor and Study Assistant.
+You assist students across ANY academic, scientific, mathematical, computer science, engineering, business, humanities, or general learning subject.
+Never artificially refuse or restrict academic questions. Always aim to deliver an insightful, helpful, and pedagogically sound answer.
+
+PEDAGOGICAL DIRECTIVES:
+- Directly answer the student's question first.
+- For conceptual questions: clearly explain definitions, mechanisms, real-world examples, and key takeaways.
+- For mathematical or quantitative problems: show step-by-step derivations and clear solutions with equations ($...$ or $$...$$).
+- For programming questions: explain the logic/algorithm clearly and provide clean, syntax-highlighted code blocks with helpful comments.
+- Tone: Encouraging, intellectually rigorous, crystal clear, formatted with clear Markdown headers, bold highlights, bullet points, and code/math blocks.
+- Pedagogical style: ${styleInstructions[style] || styleInstructions.intuitive}
+
+${
+  isStudyMaterialMode
+    ? `ACTIVE STUDY MATERIAL CONTEXT (Title: "${materialTitle || 'Selected Document'}"):
+The student has attached this study material for reference:
+<STUDY_MATERIAL>
+${materialContent?.slice(0, 15000)}
+</STUDY_MATERIAL>
+INSTRUCTIONS FOR STUDY MATERIAL MODE:
+- Prioritize and ground your answers in the provided study material when the student asks about it.
+- If the question goes beyond the document, seamlessly use your broader academic knowledge to explain and supplement the material thoroughly.`
+    : `GENERAL AI MODE:
+- Answer ANY academic question directly using your comprehensive general knowledge across computer science, mathematics, natural sciences, history, languages, economics, and engineering.`
+}
+
+RESPONSE FORMAT:
+You MUST respond strictly in valid JSON format:
 {
   "reply": "Your full Markdown tutorial explanation and answer",
   "keyTakeaway": "One punchy sentence summarizing the core insight",
@@ -174,7 +209,7 @@ Format your output strictly as a JSON object with this shape:
     }
     contents.push({
       role: 'user',
-      parts: [{ text: `Topic: ${topic}\nSubject: ${subject}\nStudent Query: ${message}` }],
+      parts: [{ text: message }],
     });
 
     const response = await callGeminiWithRetry({
@@ -186,11 +221,24 @@ Format your output strictly as a JSON object with this shape:
       },
     });
 
-    return extractAndParseJSON<{
-      reply: string;
-      keyTakeaway?: string;
-      followUpQuestions: string[];
-    }>(response.text);
+    try {
+      return extractAndParseJSON<{
+        reply: string;
+        keyTakeaway?: string;
+        followUpQuestions: string[];
+      }>(response.text);
+    } catch {
+      const rawText = response.text?.trim() || '';
+      return {
+        reply: rawText,
+        keyTakeaway: 'Understanding the core mechanisms and step-by-step principles ensures long-term mastery.',
+        followUpQuestions: [
+          'Can you give another example of this?',
+          'How does this apply to practical problem solving?',
+          'What are common exam questions on this topic?',
+        ],
+      };
+    }
   },
 
   /**

@@ -6,15 +6,19 @@ export const geminiRouter = Router();
 // Middleware to handle Gemini errors consistently
 function handleGeminiError(res: Response, error: unknown, context: string) {
   console.error(`Error in ${context}:`, error);
-  const message = error instanceof Error ? error.message : 'Unknown Gemini error';
+  const rawMessage = error instanceof Error ? error.message : 'Unknown error';
 
   const isApiKeyMissing =
-    message.includes('GEMINI_API_KEY') ||
-    message.includes('API key not valid') ||
-    message.includes('API_KEY_INVALID');
+    rawMessage.includes('GEMINI_API_KEY') ||
+    rawMessage.includes('API key not valid') ||
+    rawMessage.includes('API_KEY_INVALID');
+
+  const userFriendlyMessage = isApiKeyMissing
+    ? 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in your .env file or environment variables.'
+    : 'Something went wrong while connecting to StudyMate. Please try again.';
 
   res.status(isApiKeyMissing ? 401 : 500).json({
-    error: message,
+    error: userFriendlyMessage,
     context,
     isApiKeyMissing,
     help: isApiKeyMissing
@@ -32,18 +36,19 @@ geminiRouter.get('/status', async (_req: Request, res: Response) => {
   });
 });
 
-// 1. AI Tutor
+// 1. AI Tutor - General AI and Study Material AI
 geminiRouter.post('/tutor', async (req: Request, res: Response) => {
   try {
-    const { message, topic, subject, style, history } = req.body;
+    const { message, mode, materialContent, materialTitle, style, history } = req.body;
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'Field "message" is required and must be a string.' });
       return;
     }
     const result = await GeminiService.askTutor({
       message,
-      topic,
-      subject,
+      mode,
+      materialContent,
+      materialTitle,
       style,
       history,
     });

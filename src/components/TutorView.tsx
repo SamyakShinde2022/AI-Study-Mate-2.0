@@ -1,48 +1,69 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  GraduationCap,
   Send,
   Sparkles,
-  RefreshCw,
-  Lightbulb,
-  ArrowRight,
-  BookOpen,
-  Copy,
+  Paperclip,
   Check,
+  Copy,
+  Lightbulb,
   Compass,
+  FileText,
+  RotateCcw,
+  Bot,
+  User,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { ChatMessage, TutorStyle } from '../types/index.ts';
+import { AiMode, ChatMessage, StudyMaterial, TutorStyle } from '../types/index.ts';
 import { geminiClient } from '../services/geminiClient.ts';
 
 interface TutorViewProps {
-  currentTopic: string;
-  currentSubject: string;
+  initialPrompt?: string;
+  onClearInitialPrompt?: () => void;
+  activeMaterial: StudyMaterial | null;
+  allMaterials: StudyMaterial[];
+  onSelectMaterial: (m: StudyMaterial) => void;
 }
 
-export const TutorView: React.FC<TutorViewProps> = ({ currentTopic, currentSubject }) => {
+export const TutorView: React.FC<TutorViewProps> = ({
+  initialPrompt,
+  onClearInitialPrompt,
+  activeMaterial,
+  allMaterials,
+  onSelectMaterial,
+}) => {
+  const [mode, setMode] = useState<AiMode>(activeMaterial ? 'material' : 'general');
+  const [style, setStyle] = useState<TutorStyle>('intuitive');
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showMaterialPicker, setShowMaterialPicker] = useState(false);
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'model',
-      text: `Hello! I'm your **Gemini AI Academic Tutor**. 
-I'm ready to help you master **${currentTopic || 'any topic'}** in **${currentSubject || 'General Studies'}**.
+      text: `Hello! I'm **StudyMate**, your AI study assistant.
 
-Ask me to explain any difficult concept, solve a complex equation, provide an intuitive analogy, or test your understanding!`,
+I can answer any questions across computer science, mathematics, physics, biology, languages, engineering, or general academic subjects.
+
+You can ask me to:
+- Explain difficult concepts simply with real-world examples
+- Solve equations step-by-step
+- Write, debug, or explain programming code
+- Prepare high-yield exam takeaways
+
+What are you working on today?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      keyTakeaway: 'Active inquiry and breaking ideas down into simpler mental models is the fastest path to mastery.',
+      keyTakeaway: 'Mastery begins with curiosity: break concepts down into intuitive first principles.',
       followUpQuestions: [
-        `Explain the core intuition of ${currentTopic || 'this topic'} in simple terms.`,
-        'Walk me through a challenging problem step-by-step.',
-        'What are the most common misconceptions on exams?',
+        'Explain recursion in simple words',
+        'What are Newton’s laws of motion?',
+        'How does a binary search tree work?',
       ],
+      mode: 'general',
     },
   ]);
-
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [style, setStyle] = useState<TutorStyle>('intuitive');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -54,9 +75,24 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
     scrollToBottom();
   }, [messages, isLoading]);
 
-  const handleSend = async (userPrompt?: string) => {
-    const messageToSend = (userPrompt || input).trim();
-    if (!messageToSend || isLoading) return;
+  // Handle initial prompt passed from Dashboard search
+  useEffect(() => {
+    if (initialPrompt && initialPrompt.trim()) {
+      handleSend(initialPrompt);
+      if (onClearInitialPrompt) onClearInitialPrompt();
+    }
+  }, [initialPrompt]);
+
+  // If active material changes, set mode to material if applicable
+  useEffect(() => {
+    if (activeMaterial) {
+      setMode('material');
+    }
+  }, [activeMaterial]);
+
+  const handleSend = async (overridePrompt?: string) => {
+    const textToSend = (overridePrompt || input).trim();
+    if (!textToSend || isLoading) return;
 
     setError(null);
     setInput('');
@@ -64,8 +100,10 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      text: messageToSend,
+      text: textToSend,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      mode,
+      materialTitle: mode === 'material' ? activeMaterial?.title : undefined,
     };
 
     const nextMessages = [...messages, userMessage];
@@ -73,7 +111,6 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
     setIsLoading(true);
 
     try {
-      // Reconstruct conversation history for context
       const history = nextMessages
         .filter((m) => m.id !== 'welcome')
         .map((m) => ({
@@ -82,9 +119,10 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
         }));
 
       const res = await geminiClient.askTutor({
-        message: messageToSend,
-        topic: currentTopic,
-        subject: currentSubject,
+        message: textToSend,
+        mode,
+        materialContent: mode === 'material' ? activeMaterial?.content : undefined,
+        materialTitle: mode === 'material' ? activeMaterial?.title : undefined,
         style,
         history,
       });
@@ -96,75 +134,142 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         keyTakeaway: res.keyTakeaway,
         followUpQuestions: res.followUpQuestions,
+        mode,
+        materialTitle: mode === 'material' ? activeMaterial?.title : undefined,
       };
 
       setMessages((prev) => [...prev, modelMessage]);
-    } catch (err) {
-      setError((err as Error).message || 'Failed to get tutor response.');
+    } catch (err: any) {
+      setError(err?.message || 'Something went wrong while connecting to StudyMate. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const copyText = (id: string, text: string) => {
+  const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleQuickPrompt = (prompt: string) => {
-    handleSend(prompt);
+  const handleClearChat = () => {
+    setMessages([
+      {
+        id: `reset-${Date.now()}`,
+        role: 'model',
+        text: "Chat cleared. What topic or problem would you like to explore next?",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: 'general',
+      },
+    ]);
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] min-h-[580px] bg-slate-900/60 rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
-      {/* Tutor Sub-Header */}
-      <div className="px-4 py-3 bg-slate-800/80 border-b border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            <GraduationCap className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              Gemini AI Tutor
-              <span className="text-[11px] font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                {currentTopic}
-              </span>
-            </h2>
-            <p className="text-[11px] text-slate-400">
-              Interactive pedagogical guidance with active recall prompting
-            </p>
+    <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-100px)] min-h-[580px] bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+      {/* 1. Header: AI Tutor & Mode Switcher */}
+      <div className="px-5 py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-white">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-slate-900">AI Tutor</h2>
+            <span className="text-[11px] text-slate-400">•</span>
+            <span className="text-xs text-slate-500">
+              Ask me anything you're learning.
+            </span>
           </div>
         </div>
 
-        {/* Pedagogy Style Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded-xl border border-slate-700/70 text-xs">
-          <span className="text-[11px] text-slate-400 px-2 font-medium">Style:</span>
-          {(
-            [
-              { id: 'intuitive', label: 'Intuitive' },
-              { id: 'first-principles', label: 'First Principles' },
-              { id: 'exam-focused', label: 'Exam Focus' },
-              { id: 'socratic', label: 'Socratic' },
-            ] as const
-          ).map((item) => (
+        {/* Mode & Attachment Selector */}
+        <div className="flex items-center gap-2">
+          {/* Mode Pill Toggle */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs">
             <button
-              key={item.id}
-              onClick={() => setStyle(item.id)}
-              className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                style === item.id
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+              onClick={() => setMode('general')}
+              className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                mode === 'general'
+                  ? 'bg-white text-indigo-700 shadow-xs font-semibold'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {item.label}
+              General AI
             </button>
-          ))}
+            <button
+              onClick={() => {
+                if (!activeMaterial && allMaterials.length > 0) {
+                  onSelectMaterial(allMaterials[0]);
+                }
+                setMode('material');
+              }}
+              className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1 cursor-pointer ${
+                mode === 'material'
+                  ? 'bg-white text-indigo-700 shadow-xs font-semibold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Paperclip className="w-3 h-3" />
+              <span>Study Material AI</span>
+            </button>
+          </div>
+
+          {/* Active Material dropdown indicator if in material mode */}
+          {mode === 'material' && (
+            <div className="relative">
+              <button
+                onClick={() => setShowMaterialPicker(!showMaterialPicker)}
+                className="text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition truncate max-w-[150px] sm:max-w-[190px]"
+                title={activeMaterial?.title || 'Attach a document'}
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="truncate">{activeMaterial?.title || 'Choose Document'}</span>
+              </button>
+
+              {showMaterialPicker && (
+                <>
+                  <div
+                    className="fixed inset-0 z-20"
+                    onClick={() => setShowMaterialPicker(false)}
+                  />
+                  <div className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 z-30 space-y-1">
+                    <div className="text-[10px] font-semibold text-slate-400 px-2 py-1 uppercase">
+                      Select Reference Document:
+                    </div>
+                    {allMaterials.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          onSelectMaterial(m);
+                          setShowMaterialPicker(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition ${
+                          activeMaterial?.id === m.id
+                            ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                            : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <span className="truncate">{m.title}</span>
+                        {activeMaterial?.id === m.id && (
+                          <Check className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Clear button */}
+          <button
+            onClick={handleClearChat}
+            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition"
+            title="Reset conversation"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
-      {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+      {/* 2. Chat Feed Area */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-[#FAFAFA]">
         {messages.map((msg) => {
           const isModel = msg.role === 'model';
           return (
@@ -172,73 +277,84 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
               key={msg.id}
               className={`flex flex-col ${isModel ? 'items-start' : 'items-end'}`}
             >
-              <div className="flex items-center gap-2 mb-1 text-[11px] text-slate-400 px-1">
-                <span>{isModel ? 'AI Tutor (Gemini)' : 'You'}</span>
+              {/* Header metadata label */}
+              <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-slate-400">
+                <span className="font-medium text-slate-600">
+                  {isModel ? 'StudyMate' : 'You'}
+                </span>
                 <span>•</span>
                 <span>{msg.timestamp}</span>
+                {msg.materialTitle && (
+                  <>
+                    <span>•</span>
+                    <span className="text-indigo-600 font-medium truncate max-w-[140px]">
+                      📄 {msg.materialTitle}
+                    </span>
+                  </>
+                )}
               </div>
 
+              {/* Message Bubble Card */}
               <div
-                className={`max-w-3xl rounded-2xl p-4 sm:p-5 text-sm leading-relaxed shadow-md ${
+                className={`max-w-2xl sm:max-w-3xl rounded-2xl p-4 sm:p-5 text-xs sm:text-sm leading-relaxed shadow-xs ${
                   isModel
-                    ? 'bg-slate-800/90 text-slate-100 border border-slate-700/70'
-                    : 'bg-indigo-600 text-white border border-indigo-500 shadow-indigo-600/10'
+                    ? 'bg-white text-slate-900 border border-slate-200/90'
+                    : 'bg-indigo-600 text-white shadow-xs'
                 }`}
               >
-                {/* Content */}
-                <div className="whitespace-pre-wrap font-sans space-y-2">
+                {/* Text Content with proper code blocks & headers */}
+                <div className="whitespace-pre-wrap font-sans space-y-2.5 leading-relaxed">
                   {msg.text}
                 </div>
 
-                {/* Key Takeaway Card if available */}
-                {msg.keyTakeaway && (
-                  <div className="mt-3.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 flex items-start gap-2.5 text-xs">
-                    <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                {/* Key Takeaway box */}
+                {isModel && msg.keyTakeaway && (
+                  <div className="mt-3.5 p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-indigo-950 flex items-start gap-2.5 text-xs">
+                    <Lightbulb className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-bold text-amber-300">Core Takeaway: </span>
+                      <span className="font-bold text-indigo-700">Key Takeaway: </span>
                       {msg.keyTakeaway}
                     </div>
                   </div>
                 )}
 
-                {/* Follow up prompts */}
-                {msg.followUpQuestions && msg.followUpQuestions.length > 0 && (
-                  <div className="mt-4 pt-3 border-t border-slate-700/70">
-                    <p className="text-[11px] font-semibold text-indigo-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Compass className="w-3.5 h-3.5" /> Recommended Follow-ups:
-                    </p>
-                    <div className="flex flex-wrap gap-2">
+                {/* Recommended Follow-up Suggestions */}
+                {isModel && msg.followUpQuestions && msg.followUpQuestions.length > 0 && (
+                  <div className="mt-3.5 pt-3 border-t border-slate-100">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                      Suggested follow-ups:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
                       {msg.followUpQuestions.map((q, idx) => (
                         <button
                           key={idx}
-                          onClick={() => handleQuickPrompt(q)}
+                          onClick={() => handleSend(q)}
                           disabled={isLoading}
-                          className="text-left text-xs bg-slate-900/80 hover:bg-indigo-950/70 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-500/40 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 group"
+                          className="text-left text-xs bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200/80 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition"
                         >
-                          <span className="line-clamp-1">{q}</span>
-                          <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 shrink-0" />
+                          {q}
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Copy button */}
+                {/* Copy button for model responses */}
                 {isModel && (
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-2.5 flex justify-end">
                     <button
-                      onClick={() => copyText(msg.id, msg.text)}
-                      className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition"
-                      title="Copy explanation"
+                      onClick={() => handleCopy(msg.id, msg.text)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition"
+                      title="Copy response"
                     >
                       {copiedId === msg.id ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Copied</span>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span className="text-emerald-600 font-medium">Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3.5 h-3.5" />
+                          <Copy className="w-3 h-3" />
                           <span>Copy</span>
                         </>
                       )}
@@ -250,17 +366,17 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
           );
         })}
 
+        {/* Loading Indicator */}
         {isLoading && (
-          <div className="flex items-start gap-3">
-            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-xs text-slate-300 flex items-center gap-3">
-              <Sparkles className="w-4 h-4 text-indigo-400 animate-spin" />
-              <span>Gemini is generating your personalized tutor response...</span>
-            </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200/80 rounded-xl px-4 py-3 max-w-xs shadow-xs">
+            <Sparkles className="w-4 h-4 text-indigo-600 animate-spin" />
+            <span>StudyMate is thinking...</span>
           </div>
         )}
 
+        {/* Error notification */}
         {error && (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
             <strong>Error: </strong> {error}
           </div>
         )}
@@ -268,36 +384,41 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
-      <div className="p-3 sm:p-4 bg-slate-800/90 border-t border-slate-700/60">
-        {/* Quick starter chips */}
-        <div className="flex gap-2 mb-2.5 overflow-x-auto scrollbar-none pb-1 text-xs">
+      {/* 3. Bottom Input & Suggestion Chips */}
+      <div className="p-4 bg-white border-t border-slate-100 space-y-3">
+        {/* Only 3-4 Quick Suggestion Chips */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-none text-xs">
           <button
-            onClick={() => handleQuickPrompt(`Break down the hardest concept in ${currentTopic} into simple terms.`)}
-            className="whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-900 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition"
+            onClick={() => handleSend('Explain this concept simply with a real-world analogy')}
+            disabled={isLoading}
+            className="whitespace-nowrap px-3 py-1 rounded-full bg-slate-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 transition"
           >
-            💡 Simplify Core Concept
+            💡 Explain simply
           </button>
           <button
-            onClick={() => handleQuickPrompt(`Give me a realistic practice exam question on ${currentTopic} and guide me through solving it.`)}
-            className="whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-900 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition"
+            onClick={() => handleSend('Give me a clear, concrete example of how this is applied')}
+            disabled={isLoading}
+            className="whitespace-nowrap px-3 py-1 rounded-full bg-slate-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 transition"
           >
-            📝 Practice Problem
+            🔍 Give an example
           </button>
           <button
-            onClick={() => handleQuickPrompt(`What are the key formulas, definitions, and equations I must memorize for ${currentTopic}?`)}
-            className="whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-900 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition"
+            onClick={() => handleSend('Walk me through solving a realistic practice problem step-by-step')}
+            disabled={isLoading}
+            className="whitespace-nowrap px-3 py-1 rounded-full bg-slate-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 transition"
           >
-            📐 Key Formulas
+            📝 Practice step-by-step
           </button>
           <button
-            onClick={() => handleQuickPrompt(`Test me! Ask me a conceptual question about ${currentTopic} to check my understanding.`)}
-            className="whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-900 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition"
+            onClick={() => handleSend('Quiz me on this! Ask me one question to test my understanding')}
+            disabled={isLoading}
+            className="whitespace-nowrap px-3 py-1 rounded-full bg-slate-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 transition"
           >
-            ❓ Quiz Me Now
+            ❓ Quiz me
           </button>
         </div>
 
+        {/* Main Input Form */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -309,21 +430,22 @@ Ask me to explain any difficult concept, solve a complex equation, provide an in
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask Gemini Tutor about ${currentTopic || 'any subject'}...`}
+            placeholder={
+              mode === 'material' && activeMaterial
+                ? `Ask StudyMate about "${activeMaterial.title}"...`
+                : 'Ask StudyMate anything (e.g. What is recursion?, Explain Newton’s second law)...'
+            }
             disabled={isLoading}
-            className="flex-1 bg-slate-950/80 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 transition"
           />
+
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-medium text-sm transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl font-semibold text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
           >
-            {isLoading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            <span className="hidden sm:inline">Ask Tutor</span>
+            <Send className="w-4 h-4" />
+            <span className="hidden sm:inline">Send</span>
           </button>
         </form>
       </div>

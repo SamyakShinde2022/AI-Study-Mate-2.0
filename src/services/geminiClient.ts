@@ -1,4 +1,5 @@
 import {
+  AiMode,
   ApiStatus,
   ChatMessage,
   FlashcardDeck,
@@ -29,7 +30,7 @@ async function postJSON<T>(endpoint: string, payload: Record<string, unknown>): 
   const data = await response.json();
 
   if (!response.ok) {
-    const errorMsg = data.error || `Request failed with status ${response.status}`;
+    const errorMsg = data.error || 'Something went wrong while connecting to StudyMate. Please try again.';
     const err = new Error(errorMsg) as Error & { isApiKeyMissing?: boolean; help?: string };
     err.isApiKeyMissing = data.isApiKeyMissing;
     err.help = data.help;
@@ -51,19 +52,20 @@ export const geminiClient = {
       return {
         ok: false,
         model: 'gemini-3.8-flash',
-        message: (err as Error).message || 'Server unreachable',
+        message: 'Server unreachable',
         hasEnvKey: false,
       };
     }
   },
 
   /**
-   * 1. Ask AI Tutor
+   * 1. Ask AI Tutor (Supports General AI and Study Material AI modes)
    */
   async askTutor(params: {
     message: string;
-    topic?: string;
-    subject?: string;
+    mode?: AiMode;
+    materialContent?: string;
+    materialTitle?: string;
     style?: TutorStyle;
     history?: Array<{ role: 'user' | 'model'; text: string }>;
   }): Promise<{ reply: string; followUpQuestions: string[]; keyTakeaway?: string }> {

@@ -1,18 +1,45 @@
 export type ActiveTab =
+  | 'dashboard'
+  | 'materials'
   | 'tutor'
-  | 'summarizer'
   | 'quiz'
   | 'flashcards'
-  | 'important_questions'
-  | 'viva'
   | 'planner'
-  | 'insights';
+  | 'progress'
+  | 'viva'
+  | 'important_questions'
+  | 'summarizer'
+  | 'settings';
 
 export interface ApiStatus {
   ok: boolean;
   model: string;
   message: string;
   hasEnvKey: boolean;
+}
+
+export type AiMode = 'general' | 'material';
+
+export interface StudyMaterial {
+  id: string;
+  title: string;
+  subject: string;
+  content: string;
+  sourceType: 'text' | 'pdf' | 'upload' | 'preset';
+  dateAdded: string;
+  wordCount: number;
+  readingMinutes: number;
+  tags?: string[];
+}
+
+export interface StudyTask {
+  id: string;
+  title: string;
+  subject: string;
+  duration: string;
+  priority: 'high' | 'medium' | 'low';
+  completed: boolean;
+  category: 'Review' | 'Practice' | 'Quiz' | 'Reading';
 }
 
 // 1. AI Tutor Types
@@ -23,6 +50,8 @@ export interface ChatMessage {
   timestamp: string;
   keyTakeaway?: string;
   followUpQuestions?: string[];
+  mode?: AiMode;
+  materialTitle?: string;
 }
 
 export type TutorStyle = 'intuitive' | 'first-principles' | 'exam-focused' | 'socratic';
