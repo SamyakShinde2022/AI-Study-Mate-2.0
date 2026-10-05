@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { AiMode, ChatMessage, StudyMaterial, TutorStyle } from '../types/index.ts';
 import { geminiClient } from '../services/geminiClient.ts';
+import { MarkdownRenderer } from './MarkdownRenderer.tsx';
 
 interface TutorViewProps {
   initialPrompt?: string;
@@ -43,23 +44,23 @@ export const TutorView: React.FC<TutorViewProps> = ({
     {
       id: 'welcome',
       role: 'model',
-      text: `Hello! I'm **StudyMate**, your AI study assistant.
+      text: `Hey! I'm **StudyMate** 👋
 
-I can answer any questions across computer science, mathematics, physics, biology, languages, engineering, or general academic subjects.
+Think of me as your personal study partner and senior who loves breaking down tough concepts without the textbook fluff.
 
-You can ask me to:
-- Explain difficult concepts simply with real-world examples
-- Solve equations step-by-step
-- Write, debug, or explain programming code
-- Prepare high-yield exam takeaways
+Here's how I can help:
+- **Tackle tricky concepts** in plain English with real-world analogies 🧠
+- **Solve math & physics equations** step-by-step ⚡
+- **Write, debug, and optimize code** with clean explanations 💻
+- **Prep high-yield exam takeaways** so you ace your tests 📚
 
-What are you working on today?`,
+What are we studying today?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      keyTakeaway: 'Mastery begins with curiosity: break concepts down into intuitive first principles.',
+      keyTakeaway: 'Great learning happens when you connect core principles to simple intuition.',
       followUpQuestions: [
-        'Explain recursion in simple words',
-        'What are Newton’s laws of motion?',
-        'How does a binary search tree work?',
+        'Explain recursion in simple words 🧠',
+        'What are Newton’s three laws of motion? ⚡',
+        'How does a binary search tree work? 🌲',
       ],
       mode: 'general',
     },
@@ -303,9 +304,13 @@ What are you working on today?`,
                 }`}
               >
                 {/* Text Content with proper code blocks & headers */}
-                <div className="whitespace-pre-wrap font-sans space-y-2.5 leading-relaxed">
-                  {msg.text}
-                </div>
+                {isModel ? (
+                  <MarkdownRenderer content={msg.text} />
+                ) : (
+                  <div className="whitespace-pre-wrap font-sans leading-relaxed text-xs sm:text-sm font-medium">
+                    {msg.text}
+                  </div>
+                )}
 
                 {/* Key Takeaway box */}
                 {isModel && msg.keyTakeaway && (
